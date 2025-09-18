@@ -1,0 +1,26 @@
+- alias: "Lock unlocked -> switch on"
+  trigger:
+    - platform: state
+      entity_id: lock.front
+      to: "unlocked"
+  action:
+    - service: switch.turn_on
+      entity_id: switch.out2
+
+- alias: "Switch on -> light on"
+  trigger:
+    - platform: state
+      entity_id: switch.out2
+      to: "on"
+  action:
+    - service: light.turn_on
+      entity_id: light.l2
+
+- alias: "Light on -> unlock again (closes loop)"
+  trigger:
+    - platform: state
+      entity_id: light.l2
+      to: "on"
+  action:
+    - service: lock.unlock
+      entity_id: lock.front

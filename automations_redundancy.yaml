@@ -1,0 +1,19 @@
+- alias: "Motion -> switch on & play (path 1)"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.motion_1
+      to: "on"
+  action:
+    - service: switch.turn_on
+      entity_id: switch.sw1
+    - service: media_player.play
+      entity_id: media_player.mp1
+
+- alias: "Switch on -> play (path 2)"
+  trigger:
+    - platform: state
+      entity_id: switch.sw1
+      to: "on"
+  action:
+    - service: media_player.play
+      entity_id: media_player.mp1

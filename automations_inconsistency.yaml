@@ -1,0 +1,29 @@
+
+- alias: "Presence -> unlock & light on"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.presence_1
+      to: "on"
+  action:
+    - service: lock.unlock
+      entity_id: lock.front
+    - service: light.turn_on
+      entity_id: light.l1
+
+- alias: "Presence -> outlet on"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.presence_1
+      to: "on"
+  action:
+    - service: switch.turn_on
+      entity_id: switch.out1
+
+- alias: "Outlet on -> light off (conflict path)"
+  trigger:
+    - platform: state
+      entity_id: switch.out1
+      to: "on"
+  action:
+    - service: light.turn_off
+      entity_id: light.l1
