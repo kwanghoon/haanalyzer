@@ -1,0 +1,28 @@
+# A) 매일 18:00에 거실 조명 켜기 (time 트리거)
+- alias: "18:00 -> light on (time trigger)"
+  trigger:
+    - platform: time
+      at: "18:00:00"
+  action:
+    - service: light.turn_on
+      entity_id: light.living_room
+
+# B) 거실 조명이 켜지면 스위치 켜기 (state 트리거)
+- alias: "light on -> switch on (state trigger)"
+  trigger:
+    - platform: state
+      entity_id: light.living_room
+      to: "on"
+  action:
+    - service: switch.turn_on
+      entity_id: switch.sw1
+
+# C) 스위치가 켜지면 미디어 플레이어 재생 (state 트리거)
+- alias: "switch on -> play music (state trigger)"
+  trigger:
+    - platform: state
+      entity_id: switch.sw1
+      to: "on"
+  action:
+    - service: media_player.play
+      entity_id: media_player.mp1
