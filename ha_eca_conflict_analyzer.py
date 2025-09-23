@@ -82,29 +82,43 @@ ACTION_STATE_EFFECTS: Dict[Tuple[str, str], str] = {
     ("climate", "set_hvac_mode"): "hvac_mode_changed",
 }
 
+def make_hashable(obj):
+    if isinstance(obj, dict):
+        return frozenset((k, make_hashable(v)) for k, v in obj.items())
+    elif isinstance(obj, list):
+        return tuple(make_hashable(x) for x in obj)
+    elif isinstance(obj, set):
+        return frozenset(make_hashable(x) for x in obj)
+    elif isinstance(obj, tuple):
+        return tuple(make_hashable(x) for x in obj)
+    else:
+        return obj
+
 def _normalize_event(trigger: Dict[str, Any]) -> List['Event']:
-    if trigger.get("platform") == "state" or trigger.get("type") == "state":
+    if trigger.get("platform") == "state" or trigger.get("type") == "state" or trigger.get("trigger") == "state":
         entity = trigger.get("entity_id")
         to = trigger.get("to")
         if isinstance(entity, list):
             return [Event(kind="state", entity_id=e, to=to,
-                          extra=tuple(sorted({k:v for k,v in trigger.items()
-                                              if k not in ("platform","entity_id","to","from")}.items())))
+                          extra=make_hashable(tuple(sorted({k:v for k,v in trigger.items()
+                                    if k not in ("platform","entity_id","to","from")}.items())) )
+                                                )
                     for e in entity]
         else:
             return [Event(kind="state", entity_id=entity, to=to,
-                          extra=tuple(sorted({k:v for k,v in trigger.items()
-                                              if k not in ("platform","entity_id","to","from")}.items())))]
+                          extra=make_hashable( tuple(sorted({k:v for k,v in trigger.items()
+                                                    if k not in ("platform","entity_id","to","from")}.items())) )
+                                              )]
     kind = trigger.get("platform", "event")
     name = trigger.get("event_type")
     extra = dict(trigger)
     return [Event(kind=kind if not name else f"{kind}:{name}", entity_id=None, to=None,
-                  extra=tuple(sorted(extra.items())))]
+                  extra=make_hashable( tuple(sorted(extra.items())) )                   )]
 
 def _normalize_action(step: Dict[str, Any]) -> List['Action']:
     out: List[Action] = []
-    if "service" in step:
-        service = step["service"]
+    if "service" in step or "action" in step:
+        service = step.get("service") or step.get("action")
         if isinstance(service, str) and "." in service:
             domain, svc = service.split(".", 1)
         else:
@@ -123,7 +137,7 @@ def _normalize_action(step: Dict[str, Any]) -> List['Action']:
                 mode = step.get("data", {}).get("hvac_mode") or step.get("data_template", {}).get("hvac_mode")
                 value = "cool" if mode == "cool" else ("heat" if mode == "heat" else "hvac_mode_changed")
             out.append(Action(domain=domain, service=svc, entity_id=e, value=value,
-                              extra=tuple(sorted({k:v for k,v in step.items()
+                              extra=tuple(sorted({k:make_hashable(v) for k,v in step.items()
                                                   if k not in ("service","entity_id","target","data","data_template")}.items()))))
     elif "choose" in step and isinstance(step["choose"], list):
         for choice in step["choose"]:
@@ -135,7 +149,7 @@ def _normalize_action(step: Dict[str, Any]) -> List['Action']:
     elif "repeat" in step and isinstance(step["repeat"], dict):
         for act in step["repeat"].get("sequence", []):
             out.extend(_normalize_action(act))
-    return out
+    return make_hashable(out)
 
 def parse_ha_automations(yaml_text: str) -> List[Dict[str, Any]]:
     docs = list(yaml.safe_load_all(yaml_text))
@@ -171,7 +185,7 @@ class EFG:
     def add_action(self, a: Action) -> int:
         self.actions.add(a)
         return self._get_id(("A", a))
-    def add_edge(self, src: Any, dst: Any):
+    def add_edge(self, src: Any, dst: Any):   
         s = self._get_id(src)
         d = self._get_id(dst)
         self.edges[s].add(d)
@@ -192,7 +206,7 @@ def build_efg(automations: List[Dict[str, Any]]) -> EFG:
         events: List[Event] = []
         for t in triggers:
             events.extend(_normalize_event(t))
-        steps = auto.get("action") or auto.get("sequence") or []
+        steps = auto.get("action") or auto.get("sequence") or auto.get("actions") or []
         steps = steps if isinstance(steps, list) else [steps]
         actions: List[Action] = []
         for s in steps:
@@ -335,7 +349,10 @@ def detect_circularity(g: EFG) -> List[Dict[str, Any]]:
 
 def analyze_ha_automations(yaml_text: str) -> Dict[str, Any]:
     automations = parse_ha_automations(yaml_text)
+    print (f"Parsed {len(automations)} automations", file=sys.stderr)
+
     g = build_efg(automations)
+    print (f"EFG has {len(g.events)} events, {len(g.actions)} actions, {sum(len(v) for v in g.edges.values())} edges", file=sys.stderr) 
     redundancy = detect_redundancy(g)
     inconsistency = detect_inconsistency(g)
     circularity = detect_circularity(g)
