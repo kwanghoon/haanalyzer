@@ -61,6 +61,10 @@ CONFLICT_CATALOG: Dict[Tuple[str, str], Set[Tuple[str, str]]] = {
     ("media_player", "unmute"):{("media_player", "mute")},
     ("climate", "set_hvac_mode:cool"): {("climate", "set_hvac_mode:heat")},
     ("climate", "set_hvac_mode:heat"): {("climate", "set_hvac_mode:cool")},
+    ("homeassistant", "turn_on"): {("homeassistant", "turn_off")},
+    ("homeassistant", "turn_off"): {("homeassistant", "turn_on")},
+    ("cover", "open_cover"): {("cover", "close_cover")},
+    ("cover", "close_cover"): {("cover", "open_cover")},
 }
 
 ACTION_STATE_EFFECTS: Dict[Tuple[str, str], str] = {
@@ -324,6 +328,10 @@ def detect_inconsistency(g: EFG) -> List[Dict[str, Any]]:
                             "entity": entity,
                             "issue": "Inconsistency: conflicting actions reachable from same event"
                         })
+                    else:
+                        print(f"DEBUG: {a1} and {a2}", file=sys.stderr)
+                        print(f"DEBUG: {k1} and {k2}", file=sys.stderr)
+                        print(f"\n", file=sys.stderr)
     return issues
 
 def detect_circularity(g: EFG) -> List[Dict[str, Any]]:
@@ -386,7 +394,7 @@ def main(argv=None) -> int:
     if args.outfile:
         with open(args.outfile, "w", encoding="utf-8") as f:
             f.write(out_json)
-    print(out_json)
+    # print(out_json)
     return 0
 
 if __name__ == "__main__":
