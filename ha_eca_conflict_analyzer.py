@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # (script body identical to previous cell; see below)
 import argparse
@@ -232,6 +231,10 @@ def build_efg(automations: List[Dict[str, Any]]) -> EFG:
             if e.kind == "state" and e.entity_id and a.entity_id and e.entity_id == a.entity_id:
                 if e.to is None or resulting_state is None or e.to == resulting_state:
                     g.add_edge(("A", a), ("E", e))
+                # else:
+                #     print(f"DEBUG: Action {a.label()}", file=sys.stderr)
+                #     print(f"DEBUG: Event {e.label()}", file=sys.stderr)
+                #     print(file=sys.stderr)
     return g
 
 def tarjan_scc(nodes: List[int], edges: Dict[int, Set[int]]) -> List[List[int]]:
@@ -328,10 +331,12 @@ def detect_inconsistency(g: EFG) -> List[Dict[str, Any]]:
                             "entity": entity,
                             "issue": "Inconsistency: conflicting actions reachable from same event"
                         })
-                    else:
-                        print(f"DEBUG: {a1} and {a2}", file=sys.stderr)
-                        print(f"DEBUG: {k1} and {k2}", file=sys.stderr)
-                        print(f"\n", file=sys.stderr)
+                    # else:
+                    #     print(f"DEBUG: {a1}", file=sys.stderr)
+                    #     print(f"DEBUG: {a2}", file=sys.stderr)
+                    #     print(f"DEBUG: {k1}", file=sys.stderr)
+                    #     print(f"DEBUG: {k2}", file=sys.stderr)
+                    #     print(f"\n", file=sys.stderr)
     return issues
 
 def detect_circularity(g: EFG) -> List[Dict[str, Any]]:
