@@ -1,0 +1,56 @@
+주요 액션 도메인별 조합
+1. Cover 관련
+  cover.set_cover_position ↔ cover.close_cover
+  cover.open_cover ↔ cover.set_cover_position
+  cover.toggle ↔ cover.close_cover
+  cover.toggle ↔ cover.open_cover
+
+2. Fan 관련
+  fan.turn_on ↔ fan.turn_off (같은 엔티티)
+  fan.turn_on ↔ fan.set_preset_mode (같은 엔티티)
+  fan.oscillate ↔ climate.set_hvac_mode
+
+3. Light 관련
+  light.turn_on ↔ lifx.effect_pulse (같은 엔티티)
+  light.turn_off ↔ lifx.effect_pulse (같은 엔티티)
+  homeassistant.turn_off ↔ light.turn_on (같은 엔티티)
+
+4. Media Player 관련
+  media_player.select_source ↔ media_player.join (같은 엔티티)
+  media_player.select_source ↔ media_player.volume_set (같은 엔티티)
+  media_player.join ↔ media_player.volume_set (같은 엔티티)
+  media_player.join ↔ media_player.unjoin
+  media_player.media_stop ↔ media_player.play_media (같은 엔티티)
+  media_player.media_stop ↔ media_player.volume_set (같은 엔티티)
+  media_player.volume_set ↔ media_player.play_media (같은 엔티티)
+  media_player.unjoin ↔ media_player.clear_playlist (같은 엔티티)
+
+5. HomeAssistant 관련
+  homeassistant.toggle ↔ homeassistant.turn_off (같은 엔티티)
+
+6. Lock & ZWave 관련
+  zwave_js.ping ↔ lock.lock (같은 엔티티)
+
+7. Script 관련
+  script.pihole_disable ↔ script.pihole_enable
+
+8. Climate & Ecobee 관련
+  ecobee.resume_program ↔ climate.set_preset_mode
+  ecobee.resume_program ↔ ecobee.set_fan_min_on_time
+  climate.set_temperature ↔ fan.oscillate
+
+9. Python Script 관련
+  python_script.main_floor_roomba ↔ python_script.upstairs_roomba
+  python_script.main_floor_roomba ↔ python_script.basement_roomba
+  python_script.upstairs_roomba ↔ python_script.basement_roomba
+
+10. 기타 조합들
+  switch.turn_off ↔ mqtt.publish/input_select.select_option/media_player.join/media_player.unjoin
+  select.select_option ↔ backup.create
+  cover.open_cover ↔ climate.set_preset_mode
+
+11. 반복적인 범용 조합
+  mqtt.publish ↔ 거의 모든 다른 서비스들
+  notify.USER1_devices ↔ notify.USER2_devices
+  notify.USER1_devices ↔ 거의 모든 다른 서비스들
+
