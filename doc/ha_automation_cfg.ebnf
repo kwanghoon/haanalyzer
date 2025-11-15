@@ -1,0 +1,801 @@
+# ====================================================================
+# Home Assistant Automation Context-Free Grammar (CFG)
+# Extracted from homeassistant/automation/*.yaml files
+# Format: EBNF (Extended Backus-Naur Form)
+# ====================================================================
+# Notation:
+#   ? = optional (0 or 1)
+#   * = zero or more
+#   + = one or more
+#   | = alternative (or)
+#   () = grouping
+#   UPPERCASE = non-terminals
+#   lowercase = terminals
+# ====================================================================
+
+# ====================================================================
+# TOP-LEVEL STRUCTURE
+# ====================================================================
+
+AUTOMATION_FILE ::= AUTOMATION+
+
+AUTOMATION ::= 
+    "-" "alias:" STRING
+    "id:" STRING
+    TRIGGERS
+    CONDITIONS?
+    ACTIONS
+    MODE?
+    MAX?
+    MAX_EXCEEDED?
+    VARIABLES?
+
+# ====================================================================
+# AUTOMATION METADATA
+# ====================================================================
+
+MODE ::= "mode:" MODE_VALUE
+
+MODE_VALUE ::= 
+    "single" | "restart" | "queued" | "parallel"
+
+MAX ::= "max:" INTEGER
+
+MAX_EXCEEDED ::= "max_exceeded:" MAX_EXCEEDED_VALUE
+
+MAX_EXCEEDED_VALUE ::= 
+    "silent" | "warning"
+
+VARIABLES ::= "variables:" VARIABLE_MAP
+
+VARIABLE_MAP ::= (VARIABLE_ENTRY)+
+
+VARIABLE_ENTRY ::= KEY ":" (STRING | TEMPLATE | NUMBER | BOOLEAN)
+
+# ====================================================================
+# TRIGGERS SECTION
+# ====================================================================
+
+TRIGGERS ::= "triggers:" TRIGGER_LIST
+
+TRIGGER_LIST ::= ("-" TRIGGER)+
+
+TRIGGER ::= 
+    STATE_TRIGGER
+    | TIME_TRIGGER
+    | SUN_TRIGGER
+    | NUMERIC_STATE_TRIGGER
+    | TEMPLATE_TRIGGER
+    | EVENT_TRIGGER
+    | HOMEASSISTANT_TRIGGER
+    | WEBHOOK_TRIGGER
+    | ZONE_TRIGGER
+    | GEO_LOCATION_TRIGGER
+    | DEVICE_TRIGGER
+    | TAG_TRIGGER
+    | MQTT_TRIGGER
+    | CALENDAR_TRIGGER
+
+# --------------------------------------------------------------------
+# State Trigger
+# --------------------------------------------------------------------
+
+STATE_TRIGGER ::= 
+    "trigger:" "state"
+    "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+    STATE_FROM?
+    STATE_TO?
+    STATE_FOR?
+    STATE_ATTRIBUTE?
+
+STATE_FROM ::= "from:" (STATE_VALUE | STATE_VALUE_LIST)
+
+STATE_TO ::= "to:" (STATE_VALUE | STATE_VALUE_LIST)
+
+STATE_FOR ::= "for:" (TIME_DURATION | TIME_STRING | TEMPLATE)
+
+STATE_ATTRIBUTE ::= "attribute:" STRING
+
+# --------------------------------------------------------------------
+# Numeric State Trigger
+# --------------------------------------------------------------------
+
+NUMERIC_STATE_TRIGGER ::= 
+    "trigger:" "numeric_state"
+    "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+    (NUMERIC_ABOVE | NUMERIC_BELOW)+
+    NUMERIC_ATTRIBUTE?
+    NUMERIC_FOR?
+    VALUE_TEMPLATE?
+
+NUMERIC_ABOVE ::= "above:" (NUMBER | TEMPLATE)
+
+NUMERIC_BELOW ::= "below:" (NUMBER | TEMPLATE)
+
+NUMERIC_ATTRIBUTE ::= "attribute:" STRING
+
+NUMERIC_FOR ::= "for:" (TIME_DURATION | TIME_STRING | TEMPLATE)
+
+# --------------------------------------------------------------------
+# Time Trigger
+# --------------------------------------------------------------------
+
+TIME_TRIGGER ::= 
+    "trigger:" "time"
+    "at:" (TIME_STRING | TIME_STRING_LIST | ENTITY_ID | TEMPLATE)
+
+TIME_STRING ::= QUOTED_TIME  # Format: 'HH:MM:SS' or 'HH:MM:00'
+
+TIME_STRING_LIST ::= ("-" TIME_STRING)+
+
+# --------------------------------------------------------------------
+# Sun Trigger
+# --------------------------------------------------------------------
+
+SUN_TRIGGER ::= 
+    "trigger:" "sun"
+    "event:" SUN_EVENT
+    SUN_OFFSET?
+
+SUN_EVENT ::= "sunrise" | "sunset"
+
+SUN_OFFSET ::= "offset:" TIME_OFFSET
+
+TIME_OFFSET ::= SIGNED_TIME_STRING  # Format: '-HH:MM:SS' or '+HH:MM:SS'
+
+# --------------------------------------------------------------------
+# Template Trigger
+# --------------------------------------------------------------------
+
+TEMPLATE_TRIGGER ::= 
+    "trigger:" "template"
+    "value_template:" TEMPLATE
+    TEMPLATE_FOR?
+
+TEMPLATE_FOR ::= "for:" (TIME_DURATION | TIME_STRING | TEMPLATE)
+
+# --------------------------------------------------------------------
+# Event Trigger
+# --------------------------------------------------------------------
+
+EVENT_TRIGGER ::= 
+    "trigger:" "event"
+    "event_type:" STRING
+    EVENT_DATA?
+
+EVENT_DATA ::= "event_data:" EVENT_DATA_MAP
+
+EVENT_DATA_MAP ::= (EVENT_DATA_ENTRY)+
+
+EVENT_DATA_ENTRY ::= KEY ":" (STRING | NUMBER | BOOLEAN)
+
+# --------------------------------------------------------------------
+# Home Assistant Trigger
+# --------------------------------------------------------------------
+
+HOMEASSISTANT_TRIGGER ::= 
+    "trigger:" "homeassistant"
+    "event:" HOMEASSISTANT_EVENT
+
+HOMEASSISTANT_EVENT ::= "start" | "shutdown"
+
+# --------------------------------------------------------------------
+# Webhook Trigger
+# --------------------------------------------------------------------
+
+WEBHOOK_TRIGGER ::= 
+    "trigger:" "webhook"
+    "webhook_id:" STRING
+
+# --------------------------------------------------------------------
+# Zone Trigger
+# --------------------------------------------------------------------
+
+ZONE_TRIGGER ::= 
+    "trigger:" "zone"
+    "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+    "zone:" ENTITY_ID
+    "event:" ZONE_EVENT
+
+ZONE_EVENT ::= "enter" | "leave"
+
+# --------------------------------------------------------------------
+# Geo Location Trigger
+# --------------------------------------------------------------------
+
+GEO_LOCATION_TRIGGER ::= 
+    "trigger:" "geo_location"
+    "source:" STRING
+    "zone:" ENTITY_ID
+    "event:" ZONE_EVENT
+
+# --------------------------------------------------------------------
+# Device Trigger
+# --------------------------------------------------------------------
+
+DEVICE_TRIGGER ::= 
+    "trigger:" "device"
+    "device_id:" STRING
+    "domain:" STRING
+    "type:" STRING
+    DEVICE_SUBTYPE?
+
+DEVICE_SUBTYPE ::= "subtype:" STRING
+
+# --------------------------------------------------------------------
+# Tag Trigger
+# --------------------------------------------------------------------
+
+TAG_TRIGGER ::= 
+    "trigger:" "tag"
+    "tag_id:" (STRING | STRING_LIST)
+    DEVICE_ID?
+
+DEVICE_ID ::= "device_id:" (STRING | STRING_LIST)
+
+# --------------------------------------------------------------------
+# MQTT Trigger
+# --------------------------------------------------------------------
+
+MQTT_TRIGGER ::= 
+    "trigger:" "mqtt"
+    "topic:" STRING
+    MQTT_PAYLOAD?
+    VALUE_TEMPLATE?
+
+MQTT_PAYLOAD ::= "payload:" STRING
+
+# --------------------------------------------------------------------
+# Calendar Trigger
+# --------------------------------------------------------------------
+
+CALENDAR_TRIGGER ::= 
+    "trigger:" "calendar"
+    "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+    "event:" CALENDAR_EVENT
+    CALENDAR_OFFSET?
+
+CALENDAR_EVENT ::= "start" | "end"
+
+CALENDAR_OFFSET ::= "offset:" TIME_OFFSET
+
+# ====================================================================
+# CONDITIONS SECTION
+# ====================================================================
+
+CONDITIONS ::= "conditions:" CONDITION_LIST
+
+CONDITION_LIST ::= ("-" CONDITION)+
+
+CONDITION ::= 
+    STATE_CONDITION
+    | NUMERIC_STATE_CONDITION
+    | TIME_CONDITION
+    | SUN_CONDITION
+    | TEMPLATE_CONDITION
+    | ZONE_CONDITION
+    | AND_CONDITION
+    | OR_CONDITION
+    | NOT_CONDITION
+    | DEVICE_CONDITION
+
+# --------------------------------------------------------------------
+# State Condition
+# --------------------------------------------------------------------
+
+STATE_CONDITION ::= 
+    "condition:" "state"
+    "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+    "state:" (STATE_VALUE | STATE_VALUE_LIST)
+    STATE_CONDITION_FOR?
+    STATE_CONDITION_ATTRIBUTE?
+
+STATE_CONDITION_FOR ::= "for:" (TIME_DURATION | TIME_STRING | TEMPLATE)
+
+STATE_CONDITION_ATTRIBUTE ::= "attribute:" STRING
+
+# --------------------------------------------------------------------
+# Numeric State Condition
+# --------------------------------------------------------------------
+
+NUMERIC_STATE_CONDITION ::= 
+    "condition:" "numeric_state"
+    "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+    (NUMERIC_CONDITION_ABOVE | NUMERIC_CONDITION_BELOW)+
+    NUMERIC_CONDITION_ATTRIBUTE?
+    VALUE_TEMPLATE?
+
+NUMERIC_CONDITION_ABOVE ::= "above:" (NUMBER | TEMPLATE)
+
+NUMERIC_CONDITION_BELOW ::= "below:" (NUMBER | TEMPLATE)
+
+NUMERIC_CONDITION_ATTRIBUTE ::= "attribute:" STRING
+
+# --------------------------------------------------------------------
+# Time Condition
+# --------------------------------------------------------------------
+
+TIME_CONDITION ::= 
+    "condition:" "time"
+    (TIME_AFTER | TIME_BEFORE)*
+    TIME_WEEKDAY?
+
+TIME_AFTER ::= "after:" (TIME_STRING | ENTITY_ID | TEMPLATE)
+
+TIME_BEFORE ::= "before:" (TIME_STRING | ENTITY_ID | TEMPLATE)
+
+TIME_WEEKDAY ::= "weekday:" WEEKDAY_LIST
+
+WEEKDAY_LIST ::= ("-" WEEKDAY)+
+
+WEEKDAY ::= "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"
+
+# --------------------------------------------------------------------
+# Sun Condition
+# --------------------------------------------------------------------
+
+SUN_CONDITION ::= 
+    "condition:" "sun"
+    (SUN_AFTER | SUN_BEFORE)?
+
+SUN_AFTER ::= "after:" (SUN_EVENT | SUN_EVENT_WITH_OFFSET)
+
+SUN_BEFORE ::= "before:" (SUN_EVENT | SUN_EVENT_WITH_OFFSET)
+
+SUN_EVENT_WITH_OFFSET ::= SUN_EVENT TIME_OFFSET
+
+# --------------------------------------------------------------------
+# Template Condition
+# --------------------------------------------------------------------
+
+TEMPLATE_CONDITION ::= 
+    "condition:" "template"
+    "value_template:" TEMPLATE
+
+# --------------------------------------------------------------------
+# Zone Condition
+# --------------------------------------------------------------------
+
+ZONE_CONDITION ::= 
+    "condition:" "zone"
+    "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+    "zone:" ENTITY_ID
+
+# --------------------------------------------------------------------
+# Logical Conditions
+# --------------------------------------------------------------------
+
+AND_CONDITION ::= 
+    "condition:" "and"
+    "conditions:" CONDITION_LIST
+
+OR_CONDITION ::= 
+    "condition:" "or"
+    "conditions:" CONDITION_LIST
+
+NOT_CONDITION ::= 
+    "condition:" "not"
+    "conditions:" CONDITION_LIST
+
+# --------------------------------------------------------------------
+# Device Condition
+# --------------------------------------------------------------------
+
+DEVICE_CONDITION ::= 
+    "condition:" "device"
+    "device_id:" STRING
+    "domain:" STRING
+    "type:" STRING
+
+# ====================================================================
+# ACTIONS SECTION
+# ====================================================================
+
+ACTIONS ::= "actions:" ACTION_LIST
+
+ACTION_LIST ::= ("-" ACTION)+
+
+ACTION ::= 
+    SERVICE_ACTION
+    | DELAY_ACTION
+    | WAIT_ACTION
+    | EVENT_ACTION
+    | DEVICE_ACTION
+    | CHOOSE_ACTION
+    | REPEAT_ACTION
+    | IF_ACTION
+    | PARALLEL_ACTION
+    | STOP_ACTION
+    | VARIABLES_ACTION
+
+# --------------------------------------------------------------------
+# Service Action
+# --------------------------------------------------------------------
+
+SERVICE_ACTION ::= 
+    "action:" SERVICE_CALL
+    (SERVICE_TARGET | SERVICE_ENTITY_ID)?
+    SERVICE_DATA?
+
+SERVICE_CALL ::= DOMAIN "." SERVICE_NAME
+
+SERVICE_TARGET ::= "target:" TARGET_SPEC
+
+TARGET_SPEC ::= 
+    TARGET_ENTITY_ID?
+    TARGET_DEVICE_ID?
+    TARGET_AREA_ID?
+
+TARGET_ENTITY_ID ::= "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+
+TARGET_DEVICE_ID ::= "device_id:" (STRING | STRING_LIST)
+
+TARGET_AREA_ID ::= "area_id:" (STRING | STRING_LIST)
+
+SERVICE_ENTITY_ID ::= "entity_id:" (ENTITY_ID | ENTITY_ID_LIST)
+
+SERVICE_DATA ::= "data:" DATA_MAP
+
+DATA_MAP ::= (DATA_ENTRY)+
+
+DATA_ENTRY ::= KEY ":" DATA_VALUE
+
+DATA_VALUE ::= 
+    STRING
+    | NUMBER
+    | BOOLEAN
+    | TEMPLATE
+    | LIST
+    | MAP
+    | NULL
+
+# --------------------------------------------------------------------
+# Delay Action
+# --------------------------------------------------------------------
+
+DELAY_ACTION ::= "delay:" (TIME_DURATION | TIME_STRING | TEMPLATE)
+
+TIME_DURATION ::= 
+    (HOURS_FIELD)?
+    (MINUTES_FIELD)?
+    (SECONDS_FIELD)?
+    (MILLISECONDS_FIELD)?
+
+HOURS_FIELD ::= "hours:" INTEGER
+
+MINUTES_FIELD ::= "minutes:" INTEGER
+
+SECONDS_FIELD ::= "seconds:" INTEGER
+
+MILLISECONDS_FIELD ::= "milliseconds:" INTEGER
+
+# --------------------------------------------------------------------
+# Wait Action
+# --------------------------------------------------------------------
+
+WAIT_ACTION ::= 
+    WAIT_TEMPLATE_ACTION
+    | WAIT_TRIGGER_ACTION
+
+WAIT_TEMPLATE_ACTION ::= 
+    "wait_template:" TEMPLATE
+    WAIT_TIMEOUT?
+    WAIT_CONTINUE_ON_TIMEOUT?
+
+WAIT_TRIGGER_ACTION ::= 
+    "wait_for_trigger:" TRIGGER_LIST
+    WAIT_TIMEOUT?
+    WAIT_CONTINUE_ON_TIMEOUT?
+
+WAIT_TIMEOUT ::= "timeout:" (TIME_DURATION | TIME_STRING | TEMPLATE)
+
+WAIT_CONTINUE_ON_TIMEOUT ::= "continue_on_timeout:" BOOLEAN
+
+# --------------------------------------------------------------------
+# Event Action
+# --------------------------------------------------------------------
+
+EVENT_ACTION ::= 
+    "event:" STRING
+    EVENT_ACTION_DATA?
+
+EVENT_ACTION_DATA ::= "event_data:" DATA_MAP
+
+# --------------------------------------------------------------------
+# Device Action
+# --------------------------------------------------------------------
+
+DEVICE_ACTION ::= 
+    "device_id:" STRING
+    "domain:" STRING
+    "type:" STRING
+
+# --------------------------------------------------------------------
+# Choose Action
+# --------------------------------------------------------------------
+
+CHOOSE_ACTION ::= 
+    "choose:" CHOICE_LIST
+    DEFAULT_ACTIONS?
+
+CHOICE_LIST ::= ("-" CHOICE)+
+
+CHOICE ::= 
+    "conditions:" CONDITION_LIST
+    "sequence:" ACTION_LIST
+
+DEFAULT_ACTIONS ::= "default:" ACTION_LIST
+
+# --------------------------------------------------------------------
+# Repeat Action
+# --------------------------------------------------------------------
+
+REPEAT_ACTION ::= 
+    "repeat:" REPEAT_SPEC
+
+REPEAT_SPEC ::= 
+    REPEAT_COUNT
+    | REPEAT_WHILE
+    | REPEAT_UNTIL
+    | REPEAT_FOR_EACH
+
+REPEAT_COUNT ::= 
+    "count:" (INTEGER | TEMPLATE)
+    "sequence:" ACTION_LIST
+
+REPEAT_WHILE ::= 
+    "while:" CONDITION_LIST
+    "sequence:" ACTION_LIST
+
+REPEAT_UNTIL ::= 
+    "until:" CONDITION_LIST
+    "sequence:" ACTION_LIST
+
+REPEAT_FOR_EACH ::= 
+    "for_each:" (LIST | TEMPLATE)
+    "sequence:" ACTION_LIST
+
+# --------------------------------------------------------------------
+# If Action
+# --------------------------------------------------------------------
+
+IF_ACTION ::= 
+    "if:" CONDITION_LIST
+    "then:" ACTION_LIST
+    ELSE_ACTIONS?
+
+ELSE_ACTIONS ::= "else:" ACTION_LIST
+
+# --------------------------------------------------------------------
+# Parallel Action
+# --------------------------------------------------------------------
+
+PARALLEL_ACTION ::= 
+    "parallel:" PARALLEL_SEQUENCE_LIST
+
+PARALLEL_SEQUENCE_LIST ::= ("-" "sequence:" ACTION_LIST)+
+
+# --------------------------------------------------------------------
+# Stop Action
+# --------------------------------------------------------------------
+
+STOP_ACTION ::= 
+    "stop:" STRING
+    STOP_ERROR?
+
+STOP_ERROR ::= "error:" BOOLEAN
+
+# --------------------------------------------------------------------
+# Variables Action
+# --------------------------------------------------------------------
+
+VARIABLES_ACTION ::= "variables:" VARIABLE_MAP
+
+# ====================================================================
+# COMMON DATA TYPES AND PATTERNS
+# ====================================================================
+
+# Entity IDs
+ENTITY_ID ::= DOMAIN "." OBJECT_ID
+
+ENTITY_ID_LIST ::= 
+    ("-" ENTITY_ID)+
+
+DOMAIN ::= IDENTIFIER  
+    # Examples: light, switch, sensor, binary_sensor, automation, 
+    # climate, cover, lock, alarm_control_panel, media_player, 
+    # fan, vacuum, camera, person, group, input_boolean, 
+    # input_select, script, scene, button, humidifier, valve, etc.
+
+OBJECT_ID ::= IDENTIFIER
+
+# Service Names (examples from observed automations)
+SERVICE_NAME ::= IDENTIFIER  
+    # Common services:
+    # - turn_on, turn_off, toggle (most domains)
+    # - lock, unlock (lock domain)
+    # - open_cover, close_cover, stop_cover (cover domain)
+    # - press (button domain)
+    # - alarm_arm_home, alarm_arm_away, alarm_disarm (alarm_control_panel)
+    # - play_media, media_stop, media_pause, volume_set (media_player)
+    # - increase_speed, decrease_speed (fan)
+    # - start, pause, stop, return_to_base (vacuum)
+    # - set_fan_min_on_time, resume_program (ecobee)
+    # - set_mode (humidifier)
+    # - select_option (select, input_select)
+    # - reload_config_entry (homeassistant)
+    # - create (backup)
+    # - reconnect_client (unifi)
+    # - effect_pulse (lifx)
+    # etc.
+
+# State Values
+STATE_VALUE ::= QUOTED_STRING | UNQUOTED_STRING
+
+STATE_VALUE_LIST ::= ("-" STATE_VALUE)+
+
+# Common state values: 'on', 'off', 'home', 'not_home', 'unavailable', 
+# 'unknown', 'open', 'closed', 'locked', 'unlocked', 'playing', 
+# 'paused', 'idle', 'cleaning', 'returning', 'triggered', 'disarmed',
+# 'armed_home', 'armed_away', 'above_horizon', 'below_horizon',
+# 'printing', 'finished', 'stopped', 'rainy', 'windy', 'sunny', etc.
+
+# Templates
+TEMPLATE ::= JINJA_TEMPLATE
+
+JINJA_TEMPLATE ::= STRING_WITH_BRACES
+    # Format: "{{ ... }}" or "{% ... %}"
+    # Examples:
+    # "{{ states('sensor.temperature') }}"
+    # "{{ now().month in [1,2,3] }}"
+    # "{{ trigger.to_state.state | float(0) < 750000 }}"
+    # "{{ range(2, 20) | random }}"
+
+VALUE_TEMPLATE ::= "value_template:" TEMPLATE
+
+# Numbers
+NUMBER ::= INTEGER | FLOAT
+
+INTEGER ::= DIGIT+
+
+FLOAT ::= DIGIT+ "." DIGIT+
+
+SIGNED_NUMBER ::= ("+" | "-")? NUMBER
+
+# Strings
+STRING ::= QUOTED_STRING | UNQUOTED_STRING
+
+QUOTED_STRING ::= "'" CHAR* "'" | '"' CHAR* '"'
+
+UNQUOTED_STRING ::= (ALPHA | DIGIT | "_" | "-" | ".")+
+
+IDENTIFIER ::= (ALPHA | "_") (ALPHA | DIGIT | "_")*
+
+KEY ::= STRING
+
+# Booleans
+BOOLEAN ::= "true" | "false" | "on" | "off" | "'on'" | "'off'"
+
+# Lists
+LIST ::= ("-" LIST_ITEM)+
+
+LIST_ITEM ::= STRING | NUMBER | BOOLEAN | ENTITY_ID
+
+STRING_LIST ::= ("-" STRING)+
+
+# Maps
+MAP ::= (MAP_ENTRY)+
+
+MAP_ENTRY ::= KEY ":" (STRING | NUMBER | BOOLEAN | LIST | MAP)
+
+# Special Values
+NULL ::= "null" | "~"
+
+# Time String
+QUOTED_TIME ::= "'" HOUR ":" MINUTE ":" SECOND "'"
+
+SIGNED_TIME_STRING ::= ("+" | "-") "'" HOUR ":" MINUTE ":" SECOND "'"
+
+HOUR ::= DIGIT DIGIT
+
+MINUTE ::= DIGIT DIGIT
+
+SECOND ::= DIGIT DIGIT
+
+# Characters
+CHAR ::= ALPHA | DIGIT | SYMBOL
+
+ALPHA ::= [a-zA-Z]
+
+DIGIT ::= [0-9]
+
+SYMBOL ::= " " | "!" | "@" | "#" | "$" | "%" | "^" | "&" | "*" | 
+           "(" | ")" | "-" | "_" | "+" | "=" | "[" | "]" | "{" | "}" | 
+           "|" | "\\" | ":" | ";" | "'" | '"' | "<" | ">" | "," | "." | 
+           "?" | "/" | "~" | "`"
+
+# ====================================================================
+# COMMON DATA PATTERNS FROM OBSERVED AUTOMATIONS
+# ====================================================================
+
+# Common light.turn_on data fields:
+# - brightness_pct: INTEGER (0-100)
+# - brightness: INTEGER (0-255)
+# - color_name: STRING ("red", "blue", "purple", etc.)
+# - color_temp: INTEGER (kelvin or mireds)
+# - rgb_color: [INTEGER, INTEGER, INTEGER]
+# - transition: INTEGER (seconds)
+# - flash: "short" | "long"
+# - effect: STRING
+
+# Common notify data fields:
+# - message: STRING | TEMPLATE
+# - title: STRING | TEMPLATE
+# - data: MAP
+#   - tag: STRING
+#   - entity_id: ENTITY_ID | ENTITY_ID_LIST
+#   - actions: ACTION_BUTTON_LIST
+#   - push: PUSH_CONFIG
+
+# Action button structure:
+# - action: STRING
+# - title: STRING
+# - destructive: BOOLEAN
+# - activationMode: "background" | "foreground"
+
+# Push configuration:
+# - sound:
+#   - name: STRING
+#   - critical: INTEGER (0 or 1)
+#   - volume: FLOAT (0.0-1.0)
+
+# Common media_player.play_media data fields:
+# - media_content_id: STRING | TEMPLATE
+# - media_content_type: STRING ("music", "video", etc.)
+# - announce: BOOLEAN
+# - extra: MAP
+#   - volume: INTEGER (0-100)
+
+# Common cover data fields:
+# - position: INTEGER (0-100)
+# - tilt_position: INTEGER (0-100)
+
+# Common climate data fields:
+# - temperature: NUMBER
+# - target_temp_high: NUMBER
+# - target_temp_low: NUMBER
+# - hvac_mode: STRING ("heat", "cool", "auto", "off", etc.)
+# - preset_mode: STRING
+# - fan_mode: STRING
+
+# Common fan data fields:
+# - percentage: INTEGER (0-100)
+# - preset_mode: STRING
+# - direction: "forward" | "reverse"
+# - oscillating: BOOLEAN
+
+# Common alarm_control_panel data fields:
+# - code: STRING
+
+# ====================================================================
+# ADDITIONAL NOTES
+# ====================================================================
+
+# 1. YAML list items are denoted with "-" prefix
+# 2. All keys are case-sensitive
+# 3. Entity IDs follow the pattern: domain.object_id
+# 4. Templates use Jinja2 syntax: {{ ... }} or {% ... %}
+# 5. Time durations can be specified as:
+#    - Structured: hours/minutes/seconds/milliseconds
+#    - String: 'HH:MM:SS' or 'HH:MM:SS.mmm'
+# 6. The "mode" field controls how multiple trigger fires are handled
+# 7. Conditions are evaluated as boolean AND by default
+# 8. Actions are executed sequentially by default
+# 9. The "target" vs "entity_id" distinction:
+#    - "target" is newer and supports entity_id, device_id, area_id
+#    - "entity_id" is legacy but still widely used
+# 10. Optional metadata fields not covered: description, trace, icon
+
+# ====================================================================
+# END OF GRAMMAR
+# ====================================================================
