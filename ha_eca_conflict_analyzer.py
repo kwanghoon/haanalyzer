@@ -384,6 +384,36 @@ def analyze_ha_automations(yaml_text: str) -> Dict[str, Any]:
     }
 
 def main(argv=None) -> int:
+    """
+    명령줄 진입점으로 Home Assistant 자동화를 분석하여 
+    ECA(Event-Condition-Action) 충돌을 검사하고 JSON 보고서를 생성합니다.
+
+    CLI 옵션
+    ----------
+    --in : str
+        automations.yaml 경로. 생략하면 stdin에서 YAML을 읽습니다.
+    --out : str
+        JSON 보고서 저장 경로(선택). 생략하면 표준출력으로는 출력하지 않습니다.
+        stdout으로 출력하려면 --out stdout을 사용하세요.
+
+    동작
+    ----------
+    - 지정된 파일 또는 stdin에서 Home Assistant 자동화 YAML을 읽습니다.
+    - analyze_ha_automations(yaml_text)를 호출하여 JSON 보고서를 생성합니다.
+    - --out이 제공되면 해당 경로로 보고서를 저장합니다. 
+    - stdout으로 출력하려면 --out stdout을 사용하세요.
+
+    예시
+    ----------
+    # 파일에서 읽고 다른 파일로 저장:
+    ha_eca_conflict_analyzer.py --in automations.yaml --out report.json
+
+    # stdin에서 읽고 파일로 저장:
+    cat automations.yaml | ha_eca_conflict_analyzer.py --out report.json
+
+    # 파일에서 읽고 stdout으로 출력:
+    ha_eca_conflict_analyzer.py --in automations.yaml --out stdout
+    """
     import argparse, sys, json
     p = argparse.ArgumentParser(description="Analyze HA automations for ECA conflicts.")
     p.add_argument("--in", dest="infile", help="Path to automations.yaml (if omitted, read from stdin).")
@@ -396,10 +426,11 @@ def main(argv=None) -> int:
         yaml_text = sys.stdin.read()
     report = analyze_ha_automations(yaml_text)
     out_json = json.dumps(report, ensure_ascii=False, indent=2)
-    if args.outfile:
+    if args.outfile and args.outfile.strip().lower() == "stdout":
+        print(out_json)
+    elif args.outfile:
         with open(args.outfile, "w", encoding="utf-8") as f:
             f.write(out_json)
-    # print(out_json)
     return 0
 
 if __name__ == "__main__":
