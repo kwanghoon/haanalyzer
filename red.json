@@ -1,0 +1,20 @@
+{
+  "summary": {
+    "events": 2,
+    "actions": 2,
+    "edges": 4,
+    "redundancy_issues": 1,
+    "inconsistency_issues": 0,
+    "circularity_issues": 0
+  },
+  "redundancy": [
+    {
+      "event": "E:state(binary_sensor.motion_1→on)",
+      "action": "A:media_player.play(media_player.mp1=playing)",
+      "paths_count": 2,
+      "issue": "Redundancy: action reachable more than once from event"
+    }
+  ],
+  "inconsistency": [],
+  "circularity": []
+}

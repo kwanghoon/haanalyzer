@@ -11,7 +11,11 @@
 ## 사용법
 
 ```
-$ python ha_eca_conflict_analyzer.py --in automations_circularity.yaml
+$ python ha_eca_conflict_analyzer.py --in automations_circularity.yaml --out cir.json
+Parsed 3 automations
+EFG has 3 events, 3 actions, 6 edges
+
+$ cat cir.json
 {
   "summary": {
     "events": 3,
@@ -32,7 +36,11 @@ $ python ha_eca_conflict_analyzer.py --in automations_circularity.yaml
   ]
 }
 
-$ python ha_eca_conflict_analyzer.py --in automations_inconsistency.yaml
+$ python ha_eca_conflict_analyzer.py --in automations_inconsistency.yaml --out inc.json
+Parsed 3 automations
+EFG has 2 events, 4 actions, 5 edges
+
+$ cat inc.json
 {
   "summary": {
     "events": 2,
@@ -55,7 +63,11 @@ $ python ha_eca_conflict_analyzer.py --in automations_inconsistency.yaml
   "circularity": []
 }
 
-$ python ha_eca_conflict_analyzer.py --in automations_redundancy.yaml
+$ python ha_eca_conflict_analyzer.py --in automations_redundancy.yaml --out red.json
+Parsed 2 automations
+EFG has 2 events, 2 actions, 4 edges
+
+$ cat red.json
 {
   "summary": {
     "events": 2,

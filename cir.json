@@ -1,0 +1,19 @@
+{
+  "summary": {
+    "events": 3,
+    "actions": 3,
+    "edges": 6,
+    "redundancy_issues": 0,
+    "inconsistency_issues": 0,
+    "circularity_issues": 1
+  },
+  "redundancy": [],
+  "inconsistency": [],
+  "circularity": [
+    {
+      "cycle_nodes": "A:lock.unlock(lock.front=unlocked) → E:state(light.l2→on) → A:light.turn_on(light.l2=on) → E:state(switch.out2→on) → A:switch.turn_on(switch.out2=on) → E:state(lock.front→unlocked)",
+      "size": 6,
+      "issue": "Circularity: cycle in event flow graph"
+    }
+  ]
+}
