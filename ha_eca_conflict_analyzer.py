@@ -152,17 +152,130 @@ def make_hashable(obj):
 
 
 def _normalize_condition_block(condition: Any) -> Optional[Any]:
-    """조건 블록을 해시 가능한 표현으로 변환합니다.
-
-    None, 빈 리스트/딕셔너리는 조건 없음(None)으로 취급합니다.
-    """
+    """조건 블록을 문법에 맞춰 정규화합니다."""
     if condition is None:
         return None
-    if isinstance(condition, (list, tuple, set)) and not condition:
-        return None
-    if isinstance(condition, dict) and not condition:
-        return None
+    if isinstance(condition, list):
+        return _normalize_conditions_list(condition)
+    if isinstance(condition, tuple):
+        return condition
+    if isinstance(condition, set):
+        return _normalize_conditions_list(list(condition))
+    if isinstance(condition, dict):
+        if not condition:
+            return None
+        if "condition" in condition:
+            normalized = _normalize_condition_entry(condition)
+            if normalized is not None:
+                return normalized
+        if "conditions" in condition:
+            return _normalize_conditions_list(condition.get("conditions"))
+        items = tuple(sorted((k, make_hashable(v)) for k, v in condition.items()))
+        return ("raw", items)
     return make_hashable(condition)
+
+
+def _normalize_conditions_list(conditions: Any) -> Optional[Any]:
+    if conditions is None:
+        return None
+    if not isinstance(conditions, list):
+        conditions = [conditions]
+    normalized: List[Any] = []
+    for entry in conditions:
+        norm = _normalize_condition_block(entry)
+        if norm is not None:
+            normalized.append(norm)
+    if not normalized:
+        return None
+    if len(normalized) == 1:
+        return normalized[0]
+    return ("and", tuple(normalized))
+
+
+def _ensure_tuple(value: Any) -> Tuple[Any, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(make_hashable(v) for v in value)
+    return (make_hashable(value),)
+
+
+def _normalize_condition_children(conditions: Any) -> Tuple[Any, ...]:
+    if conditions is None:
+        return ()
+    if not isinstance(conditions, list):
+        conditions = [conditions]
+    out: List[Any] = []
+    for child in conditions:
+        norm = _normalize_condition_block(child)
+        if norm is not None:
+            out.append(norm)
+    return tuple(out)
+
+
+def _normalize_condition_entry(cond: Dict[str, Any]) -> Optional[Any]:
+    ctype = cond.get("condition")
+    if ctype == "state":
+        entities = _ensure_tuple(cond.get("entity_id"))
+        states = _ensure_tuple(cond.get("state"))
+        duration = make_hashable(cond.get("for"))
+        attribute = make_hashable(cond.get("attribute"))
+        return ("state", entities, states, duration, attribute)
+    if ctype == "numeric_state":
+        entities = _ensure_tuple(cond.get("entity_id"))
+        above = make_hashable(cond.get("above"))
+        below = make_hashable(cond.get("below"))
+        attribute = make_hashable(cond.get("attribute"))
+        value_template = make_hashable(cond.get("value_template"))
+        return ("numeric_state", entities, above, below, attribute, value_template)
+    if ctype == "time":
+        after_v = make_hashable(cond.get("after"))
+        before_v = make_hashable(cond.get("before"))
+        weekdays = _ensure_tuple(cond.get("weekday"))
+        return ("time", after_v, before_v, weekdays)
+    if ctype == "sun":
+        after_v = make_hashable(cond.get("after"))
+        before_v = make_hashable(cond.get("before"))
+        return ("sun", after_v, before_v)
+    if ctype == "template":
+        value_template = make_hashable(cond.get("value_template"))
+        return ("template", value_template)
+    if ctype == "zone":
+        entities = _ensure_tuple(cond.get("entity_id"))
+        zone = make_hashable(cond.get("zone"))
+        return ("zone", entities, zone)
+    if ctype == "and":
+        children = _normalize_condition_children(cond.get("conditions"))
+        if not children:
+            return None
+        if len(children) == 1:
+            return children[0]
+        return ("and", children)
+    if ctype == "or":
+        children = _normalize_condition_children(cond.get("conditions"))
+        if not children:
+            return None
+        return ("or", children)
+    if ctype == "not":
+        child_expr = _normalize_conditions_list(cond.get("conditions"))
+        if child_expr is None:
+            return None
+        return ("not", child_expr)
+    if ctype == "device":
+        payload = tuple(sorted(
+            (k, make_hashable(v))
+            for k, v in cond.items()
+            if k != "condition"
+        ))
+        return ("device", payload)
+    # 알 수 없는 조건은 원시 형태로 유지
+    return ("raw", tuple(sorted((k, make_hashable(v)) for k, v in cond.items())))
+
+
+def _flatten_and(expr: Any) -> List[Any]:
+    if isinstance(expr, tuple) and expr and expr[0] == "and" and len(expr) == 2 and isinstance(expr[1], tuple):
+        return list(expr[1])
+    return [expr]
 
 
 def _combine_conditions(left: Optional[Any], right: Optional[Any]) -> Optional[Any]:
@@ -173,7 +286,14 @@ def _combine_conditions(left: Optional[Any], right: Optional[Any]) -> Optional[A
         return left
     if left == right:
         return left
-    return make_hashable(("and", left, right))
+    parts: List[Any] = []
+    parts.extend(_flatten_and(left))
+    parts.extend(_flatten_and(right))
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    return ("and", tuple(parts))
 
 def _normalize_event(trigger: Dict[str, Any]) -> List['Event']:
     """
