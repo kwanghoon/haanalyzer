@@ -6,7 +6,7 @@ import yaml
 import json
 from collections import defaultdict, Counter
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Set, Any
+from typing import Dict, List, Tuple, Optional, Set, Any, TextIO
 
 @dataclass(frozen=True)
 class Event:
@@ -150,6 +150,31 @@ def make_hashable(obj):
     else:
         return obj
 
+
+def _normalize_condition_block(condition: Any) -> Optional[Any]:
+    """조건 블록을 해시 가능한 표현으로 변환합니다.
+
+    None, 빈 리스트/딕셔너리는 조건 없음(None)으로 취급합니다.
+    """
+    if condition is None:
+        return None
+    if isinstance(condition, (list, tuple, set)) and not condition:
+        return None
+    if isinstance(condition, dict) and not condition:
+        return None
+    return make_hashable(condition)
+
+
+def _combine_conditions(left: Optional[Any], right: Optional[Any]) -> Optional[Any]:
+    """두 조건을 논리 AND로 결합합니다."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    if left == right:
+        return left
+    return make_hashable(("and", left, right))
+
 def _normalize_event(trigger: Dict[str, Any]) -> List['Event']:
     """
     원시 트리거 딕셔너리를 하나 이상의 표준 Event 객체로 정규화합니다.
@@ -228,7 +253,34 @@ def _normalize_event(trigger: Dict[str, Any]) -> List['Event']:
         extra=make_hashable(tuple(sorted(extra.items())))
     )]
 
-def _normalize_action(step: Dict[str, Any]) -> List['Action']:
+def _is_condition_step(step: Any) -> bool:
+    """액션 시퀀스 내에서 조건만을 나타내는 스텝인지 판별합니다."""
+    if not isinstance(step, dict):
+        return False
+    if "condition" not in step:
+        return False
+    # 다른 액션 키가 함께 있으면 조건 전용 스텝으로 보지 않습니다.
+    forbidden = {
+        "service",
+        "action",
+        "choose",
+        "repeat",
+        "sequence",
+        "if",
+        "then",
+        "else",
+        "parallel",
+        "event",
+        "device",
+        "scene",
+        "wait_template",
+        "wait_for_trigger",
+        "delay",
+    }
+    return not any(key in step for key in forbidden)
+
+
+def _normalize_action(step: Dict[str, Any], inherited_condition: Optional[Any] = None) -> List[Tuple['Action', Optional[Any]]]:
     """
     Home Assistant 자동화/스크립트의 단일 스텝을 평탄화된 Action 객체 목록으로 정규화합니다.
 
@@ -249,12 +301,13 @@ def _normalize_action(step: Dict[str, Any]) -> List['Action']:
 
     매개변수:
         step: 단일 자동화/스크립트 스텝 딕셔너리.
+        inherited_condition: 상위 컨텍스트에서 전파된 조건 표현(None이면 무조건 실행).
 
     반환값:
-        Tuple[Action, ...]: 스텝 및 중첩 시퀀스에서 발견된 모든 원자적 서비스 호출을 나타내는
-        해시 가능한 Action 시퀀스.
+        List[Tuple[Action, Optional[Any]]]: (액션, 누적 조건) 튜플 리스트.
     """
-    out: List[Action] = []
+    out: List[Tuple[Action, Optional[Any]]] = []
+    current_condition = inherited_condition
     if "service" in step or "action" in step:
         # 서비스 문자열 추출 및 (domain, service) 분리
         service = step.get("service") or step.get("action")
@@ -289,25 +342,46 @@ def _normalize_action(step: Dict[str, Any]) -> List['Action']:
                 if k not in ("service", "entity_id", "target", "data", "data_template")
             }.items()))
 
-            out.append(Action(domain=domain, service=svc, entity_id=e, value=value, extra=extra))
+            action = Action(domain=domain, service=svc, entity_id=e, value=value, extra=extra)
+            out.append((action, current_condition))
 
     elif "choose" in step and isinstance(step["choose"], list):
         # 분기(choose) 각 선택지의 sequence 평탄화
         for choice in step["choose"]:
-            for act in choice.get("sequence", []):
-                out.extend(_normalize_action(act))
+            branch_condition = _normalize_condition_block(choice.get("conditions"))
+            combined = _combine_conditions(current_condition, branch_condition)
+            out.extend(_normalize_action_sequence(choice.get("sequence", []), combined))
         # default 블록 처리
         if "default" in step:
-            for act in step["default"]:
-                out.extend(_normalize_action(act))
+            out.extend(_normalize_action_sequence(step["default"], current_condition))
 
     elif "repeat" in step and isinstance(step["repeat"], dict):
         # 반복(repeat) 내부 sequence 평탄화
-        for act in step["repeat"].get("sequence", []):
-            out.extend(_normalize_action(act))
+        out.extend(_normalize_action_sequence(step["repeat"].get("sequence", []), current_condition))
 
     # 호출 측에서 extend 가능하도록 해시 가능한 시퀀스로 반환
     return make_hashable(out)
+
+
+def _normalize_action_sequence(
+    steps: Any,
+    inherited_condition: Optional[Any] = None,
+) -> Tuple[Tuple['Action', Optional[Any]], ...]:
+    """액션 시퀀스를 순회하며 조건을 누적한 (Action, 조건) 튜플을 반환합니다."""
+    if steps is None:
+        return make_hashable([])
+    if not isinstance(steps, list):
+        steps = [steps]
+
+    result: List[Tuple[Action, Optional[Any]]] = []
+    current_condition = inherited_condition
+    for step in steps:
+        if _is_condition_step(step):
+            step_condition = _normalize_condition_block(step)
+            current_condition = _combine_conditions(current_condition, step_condition)
+            continue
+        result.extend(_normalize_action(step, current_condition))
+    return make_hashable(result)
 
 def parse_ha_automations(yaml_text: str) -> List[Dict[str, Any]]:
     """
@@ -358,7 +432,7 @@ class EFG:
     - id_map: 노드 키(예: ("E", event))를 정수 ID로 매핑.
     - rev_id_map: 정수 ID를 노드 키로 역매핑.
     - next_id: 다음에 할당할 정수 ID.
-    - edges: 인접 리스트(노드 ID -> 후속 노드 ID 집합).
+    - edges: 인접 리스트(노드 ID -> {후속 노드 ID: 조건 집합}).
     """
     def __init__(self):
         """
@@ -370,7 +444,8 @@ class EFG:
         self.id_map: Dict[Any, int] = {}
         self.rev_id_map: Dict[int, Any] = {}
         self.next_id = 0
-        self.edges: Dict[int, Set[int]] = defaultdict(set)
+        # edges[src][dst] -> set of normalized conditions
+        self.edges: Dict[int, Dict[int, Set[Any]]] = defaultdict(lambda: defaultdict(set))
 
     def _get_id(self, node: Any) -> int:
         """
@@ -415,20 +490,22 @@ class EFG:
         self.actions.add(a)
         return self._get_id(("A", a))
 
-    def add_edge(self, src: Any, dst: Any):
+    def add_edge(self, src: Any, dst: Any, condition: Any = None):
         """
         방향 간선(src -> dst)을 추가합니다.
 
         매개변수:
         - src: 소스 노드 키 (("E", event) 또는 ("A", action))
         - dst: 목적 노드 키 (("E", event) 또는 ("A", action))
+        - condition: 에지의 실행 조건. None은 무조건 실행을 의미합니다.
 
         비고:
         - 내부적으로 노드 키를 정수 ID로 변환하여 저장합니다.
         """
         s = self._get_id(src)
         d = self._get_id(dst)
-        self.edges[s].add(d)
+        normalized_condition = _normalize_condition_block(condition)
+        self.edges[s][d].add(normalized_condition)
 
     def nodes(self) -> List[int]:
         """
@@ -450,6 +527,32 @@ class EFG:
         prefix = "E:" if kind == "E" else "A:"
         return prefix + obj.label()
 
+
+def _format_condition(cond: Any) -> str:
+    """조건 표현을 사람이 읽기 쉬운 문자열로 직렬화합니다."""
+    if cond is None:
+        return "None"
+    if cond is True:
+        return "True"
+    return repr(cond)
+
+
+def print_efg(g: EFG, stream: Optional[TextIO] = None) -> None:
+    """EFG의 노드와 에지를 텍스트로 출력합니다."""
+    if stream is None:
+        stream = sys.stdout
+    nodes = sorted(g.nodes())
+    print("EFG Nodes:", file=stream)
+    for node_id in nodes:
+        print(f"  [{node_id}] {g.label(node_id)}", file=stream)
+    print("EFG Edges:", file=stream)
+    for src in sorted(g.edges.keys()):
+        for dst in sorted(g.edges[src].keys()):
+            conditions = g.edges[src][dst] or {None}
+            cond_parts = sorted(_format_condition(c) for c in conditions)
+            cond_text = ", ".join(cond_parts)
+            print(f"  [{src}] -> [{dst}] when {cond_text}", file=stream)
+
 def build_efg(automations: List[Dict[str, Any]]) -> EFG:
     """
     평탄화된 자동화 목록으로부터 이벤트-플로우 그래프(EFG)를 구성합니다.
@@ -457,11 +560,12 @@ def build_efg(automations: List[Dict[str, Any]]) -> EFG:
     각 자동화에서 트리거/이벤트와 액션/스텝을 추출하여 Event, Action으로 정규화한 뒤
     다음과 같은 방향 그래프를 생성합니다:
 
-    - 모든 이벤트-액션 쌍에 대해 이벤트 노드에서 액션 노드로 간선을 추가합니다.
+        - 모든 이벤트-액션 쌍에 대해 이벤트 노드에서 액션 노드로 간선을 추가하며,
+            간선에는 해당 자동화/분기 조건을 부착합니다(조건이 없으면 None).
     - 각 액션이 만들어내는 상태가 동일 엔티티의 상태 이벤트와 호환되면
-      액션 노드에서 해당 상태 이벤트 노드로 간선을 추가합니다
+            액션 노드에서 해당 상태 이벤트 노드로 간선을 추가합니다
       (event.kind == "state", entity_id 일치, 그리고 event.to가 None이거나
-       action.value가 None이거나 event.to == action.value).
+             action.value가 None이거나 event.to == action.value). 이 간선의 조건은 항상 None입니다.
 
     유효한 이벤트나 액션이 없는 자동화는 건너뜁니다.
     다중 액션 자동화는 동일한 이벤트 집합을 공유하는 액션별 규칙으로 분할합니다.
@@ -482,10 +586,10 @@ def build_efg(automations: List[Dict[str, Any]]) -> EFG:
     
     사용 함수:
         - _normalize_event(trigger): 단일 트리거 딕셔너리를 Event 목록으로 변환합니다.
-        - _normalize_action(step): 단일 액션 딕셔너리를 Action 목록으로 변환합니다.
+        - _normalize_action_sequence(steps, condition): 액션 시퀀스를 (Action, 조건) 목록으로 평탄화합니다.
     """
     g = EFG()  # 그래프 초기화
-    rules: List[Tuple[List[Event], List[Action], str]] = []
+    rules: List[Tuple[List[Event], Action, Optional[Any], str]] = []
 
     # 자동화별로 이벤트/액션을 정규화하고 규칙 목록 구성
     for i, auto in enumerate(automations):
@@ -501,25 +605,32 @@ def build_efg(automations: List[Dict[str, Any]]) -> EFG:
         # 액션(스텝) 수집 및 정규화
         steps = auto.get("action") or auto.get("sequence") or auto.get("actions") or []
         steps = steps if isinstance(steps, list) else [steps]
-        actions: List[Action] = []
-        for s in steps:
-            actions.extend(_normalize_action(s))
+        actions_with_conditions: List[Tuple[Action, Optional[Any]]] = list(
+            _normalize_action_sequence(steps)
+        )
 
         # 유효한 이벤트/액션이 없으면 건너뜀
-        if not events or not actions:
+        if not events or not actions_with_conditions:
             continue
 
+        global_condition = _normalize_condition_block(auto.get("condition"))
+        if "conditions" in auto:
+            global_condition = _combine_conditions(
+                global_condition,
+                _normalize_condition_block(auto.get("conditions"))
+            )
+
         # 다중 액션을 액션별 규칙으로 분할
-        for a in actions:
-            rules.append((events, [a], name))
+        for action, action_condition in actions_with_conditions:
+            combined_condition = _combine_conditions(global_condition, action_condition)
+            rules.append((events, action, combined_condition, name))
 
     # 이벤트 → 액션 간선 추가 및 노드 등록
-    for evs, acts, _name in rules:
+    for evs, action, condition, _name in rules:
         for e in evs:
-            for a in acts:
-                g.add_edge(("E", e), ("A", a))
-                g.add_event(e)
-                g.add_action(a)
+            g.add_edge(("E", e), ("A", action), condition=condition)
+            g.add_event(e)
+            g.add_action(action)
 
     # 액션 → 이벤트 간선 추가 (액션이 유도하는 상태와 호환되는 상태 이벤트로 연결)
     all_events = list(g.events)
@@ -528,7 +639,7 @@ def build_efg(automations: List[Dict[str, Any]]) -> EFG:
         for e in all_events:
             if e.kind == "state" and e.entity_id and a.entity_id and e.entity_id == a.entity_id:
                 if e.to is None or resulting_state is None or e.to == resulting_state:
-                    g.add_edge(("A", a), ("E", e))
+                    g.add_edge(("A", a), ("E", e), condition=None)
                 # else:
                 #     print(f"DEBUG: Action {a.label()}", file=sys.stderr)
                 #     print(f"DEBUG: Event {e.label()}", file=sys.stderr)
@@ -581,7 +692,7 @@ def tarjan_scc(nodes: List[int], edges: Dict[int, Set[int]]) -> List[List[int]]:
         onstack.add(v)
 
         # v의 모든 후속 정점 w에 대해 처리
-        for w in edges.get(v, set()):
+        for w in edges.get(v, {}):
             if w not in indices:
                 # 트리 간선: 아직 방문하지 않은 w를 재귀 탐색
                 strongconnect(w)
@@ -625,7 +736,7 @@ def reachable_actions_from_event(g: EFG, start_event_id: int, path_limit: int = 
 
     매개변수:
     - g: EFG 인스턴스. 다음을 제공합니다:
-        - edges: Dict[int, Set[int]] — 노드 ID에서 후속 노드 ID 집합으로의 맵.
+        - edges: Dict[int, Dict[int, Set[Any]]] — 노드 ID에서 (후속 노드 ID -> 조건 집합)으로의 맵.
         - rev_id_map: Dict[int, Tuple[str, Any]] — 노드 ID에서 (kind, obj)로의 역 매핑.
     - start_event_id: 탐색 시작 노드 ID(일반적으로 이벤트).
     - path_limit: 시작점으로부터 탐색할 최대 간선 수(기본값: 6).
@@ -649,7 +760,7 @@ def reachable_actions_from_event(g: EFG, start_event_id: int, path_limit: int = 
         if kind == "A":
             counts[node_id] += 1
         # 인접 노드 순회(현재 경로의 노드는 재방문하지 않음)
-        for nxt in g.edges.get(node_id, set()):
+        for nxt in g.edges.get(node_id, {}):
             if nxt in visited:
                 continue
             dfs(nxt, depth + 1, visited + [nxt])
@@ -876,7 +987,7 @@ def detect_circularity(g: EFG) -> List[Dict[str, Any]]:
                 })
     return issues
 
-def analyze_ha_automations(yaml_text: str) -> Dict[str, Any]:
+def analyze_ha_automations(yaml_text: str, dump_graph: bool = False) -> Dict[str, Any]:
     """
     Home Assistant 자동화 YAML을 분석하여 구조적 지표와 이슈를 보고합니다.
 
@@ -887,6 +998,7 @@ def analyze_ha_automations(yaml_text: str) -> Dict[str, Any]:
 
     매개변수:
         yaml_text (str): Home Assistant 자동화 정의가 포함된 YAML 텍스트.
+        dump_graph (bool): True이면 EFG를 빌드한 직후 stdout으로 덤프합니다.
 
     반환값:
         Dict[str, Any]: 다음 키를 포함하는 딕셔너리:
@@ -903,7 +1015,7 @@ def analyze_ha_automations(yaml_text: str) -> Dict[str, Any]:
 
     사용 함수:
         - parse_ha_automations(yaml_text): YAML에서 자동화 항목을 파싱합니다.
-        - build_efg(automations): EFG를 구성합니다.
+        - build_efg(automations): 조건이 포함된 EFG를 구성합니다.
         - detect_redundancy(g): 중복 이슈를 탐지합니다.
         - detect_inconsistency(g): 불일치 이슈를 탐지합니다.
         - detect_circularity(g): 순환 이슈를 탐지합니다.
@@ -914,6 +1026,7 @@ def analyze_ha_automations(yaml_text: str) -> Dict[str, Any]:
 
     # EFG 구성
     g = build_efg(automations)
+    g = build_efg(automations)
     print(
         (
             f"EFG has {len(g.events)} events, "
@@ -922,6 +1035,10 @@ def analyze_ha_automations(yaml_text: str) -> Dict[str, Any]:
         ),
         file=sys.stderr
     )
+
+    if dump_graph:
+        print_efg(g)
+    g = build_efg(automations)
 
     # 이슈 탐지: 중복, 불일치, 순환
     redundancy = detect_redundancy(g)
@@ -955,11 +1072,13 @@ def main(argv=None) -> int:
     --out : str
         JSON 보고서 저장 경로(선택). 생략하면 표준출력으로는 출력하지 않습니다.
         stdout으로 출력하려면 --out stdout을 사용하세요.
+    --efg : flag
+        그래프를 빌드한 직후 stdout으로 덤프합니다.
 
     동작
     ----------
     - 지정된 파일 또는 stdin에서 Home Assistant 자동화 YAML을 읽습니다.
-    - analyze_ha_automations(yaml_text)를 호출하여 JSON 보고서를 생성합니다.
+    - analyze_ha_automations(yaml_text, dump_graph=--efg)를 호출하여 JSON 보고서를 생성합니다.
     - --out이 제공되면 해당 경로로 보고서를 저장합니다. 
     - stdout으로 출력하려면 --out stdout을 사용하세요.
 
@@ -978,13 +1097,14 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Analyze HA automations for ECA conflicts.")
     p.add_argument("--in", dest="infile", help="Path to automations.yaml (if omitted, read from stdin).")
     p.add_argument("--out", dest="outfile", help="Path to write JSON report (optional).")
+    p.add_argument("--efg", action="store_true", help="Dump the EFG graph to stdout after building it.")
     args = p.parse_args(argv)
     if args.infile:
         with open(args.infile, "r", encoding="utf-8") as f:
             yaml_text = f.read()
     else:
         yaml_text = sys.stdin.read()
-    report = analyze_ha_automations(yaml_text)
+    report = analyze_ha_automations(yaml_text, dump_graph=args.efg)
     out_json = json.dumps(report, ensure_ascii=False, indent=2)
     if args.outfile and args.outfile.strip().lower() == "stdout":
         print(out_json)
